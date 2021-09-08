@@ -41,9 +41,20 @@ func encodeJob(parent *hclwrite.Body, job *api.Job) {
 	setParameterizedJobConfig(body, job.ParameterizedJob)
 	setReschedulePolicy(body, job.Reschedule)
 	setMigrateStrategy(body, job.Migrate)
-	setAttributeValue(body, "meta", job.Meta)
+	setMeta(body, job.Meta)
 	setAttributeValue(body, "consul_token", job.ConsulToken)
 	setAttributeValue(body, "vault_token", job.VaultToken)
+}
+
+func setMeta(parent *hclwrite.Body, meta map[string]string) {
+	if len(meta) == 0 {
+		return
+	}
+
+	body := parent.AppendNewBlock("meta", nil).Body()
+	for k, v := range meta {
+		setAttributeValue(body, k, v)
+	}
 }
 
 func setParameterizedJobConfig(parent *hclwrite.Body, parameterized *api.ParameterizedJobConfig) {
@@ -98,7 +109,7 @@ func setTaskGroups(parent *hclwrite.Body, taskGroups []*api.TaskGroup) {
 		setUpdateStrategy(body, tg.Update)
 		setMigrateStrategy(body, tg.Migrate)
 		setNetworkResource(body, tg.Networks)
-		setAttributeValue(body, "meta", tg.Meta)
+		setMeta(body, tg.Meta)
 		setServices(body, tg.Services)
 		setAttributeValue(body, "shutdown_delay", tg.ShutdownDelay)
 		setAttributeValue(body, "stop_after_client_disconnect", tg.StopAfterClientDisconnect)
@@ -138,7 +149,7 @@ func setServices(parent *hclwrite.Body, services []*api.Service) {
 		setChecks(body, service.Checks)
 		setCheckRestart(body, service.CheckRestart)
 		setConnect(body, service.Connect)
-		setAttributeValue(body, "meta", service.Meta)
+		setMeta(body, service.Meta)
 		setAttributeValue(body, "canary_meta", service.CanaryMeta)
 		setAttributeValue(body, "task", service.TaskName)
 		setAttributeValue(body, "on_update", service.OnUpdate)
@@ -325,7 +336,7 @@ func setSidecarTask(parent *hclwrite.Body, task *api.SidecarTask) {
 	setAttributeValue(body, "config", task.Config)
 	setAttributeValue(body, "env", task.Env)
 	setResources(body, task.Resources)
-	setAttributeValue(body, "meta", task.Meta)
+	setMeta(body, task.Meta)
 	setAttributeValue(body, "kill_timeout", task.KillTimeout)
 	setLogConfig(body, task.LogConfig)
 	setAttributeValue(body, "shutdown_delay", task.ShutdownDelay)
@@ -564,7 +575,7 @@ func setTasks(parent *hclwrite.Body, tasks []*api.Task) {
 		setServices(body, task.Services)
 		setResources(body, task.Resources)
 		setRestartPolicy(body, task.RestartPolicy)
-		setAttributeValue(body, "meta", task.Meta)
+		setMeta(body, task.Meta)
 		setAttributeValue(body, "kill_timeout", task.KillTimeout)
 		setLogConfig(body, task.LogConfig)
 		setTaskArtifacts(body, task.Artifacts)
