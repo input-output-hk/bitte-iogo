@@ -211,7 +211,7 @@ func openOutput(name string) (io.Writer, error) {
 	if isStdout(name) {
 		return os.Stdout, nil
 	} else {
-		return os.OpenFile(name, os.O_CREATE|os.O_WRONLY, 0644)
+		return os.OpenFile(name, os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0644)
 	}
 }
 
