@@ -194,13 +194,11 @@ func nomadJobDo(namespace, job, output, action string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Println(out)
 
 		_, err = hcl.WriteTo(out)
 		if err != nil {
 			return err
 		}
-		fmt.Println(out)
 
 		cmd := exec.Command("nomad", "job", action, output)
 		cmd.Stdout = os.Stdout
