@@ -50,29 +50,53 @@ type iogo struct {
 	ListJobs       *ListJobsCmd       `arg:"subcommand:list-jobs"`
 	ListNamespaces *ListNamespacesCmd `arg:"subcommand:list-namespaces"`
 	Login          *LoginCmd          `arg:"subcommand:login"`
+	Json2Hcl       *Json2HclCmd       `arg:"subcommand:json2hcl"`
 }
 
+const version = "iogo 1.0.0"
+
 func (iogo) Version() string {
-	return "iogo 1.0.0"
+	return version
 }
 
 func main() {
-	args := iogo{}
-	arg.MustParse(&args)
+	args := &iogo{}
+	parser, err := parseArgs(args)
+	fail(parser, err)
 
 	if args.Debug {
 		logger.SetOutput(os.Stderr)
 	}
 
-	err := run(&args)
+	fail(parser, run(parser, args))
+}
 
-	if err != nil {
-		fmt.Println(err)
+func fail(parser *arg.Parser, err error) {
+	switch err {
+	case nil:
+		return
+	case arg.ErrHelp:
+		parser.WriteHelp(os.Stderr)
+		os.Exit(0)
+	case arg.ErrVersion:
+		fmt.Fprintln(os.Stdout, version)
+		os.Exit(0)
+	default:
+		fmt.Fprint(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func run(args *iogo) error {
+func parseArgs(args *iogo) (*arg.Parser, error) {
+	parser, err := arg.NewParser(arg.Config{}, args)
+	if err != nil {
+		return nil, err
+	}
+
+	return parser, parser.Parse(os.Args[1:])
+}
+
+func run(parser *arg.Parser, args *iogo) error {
 	switch {
 	case args.Plan != nil:
 		return runPlan(args.Plan)
@@ -86,6 +110,10 @@ func run(args *iogo) error {
 		return runListNamespaces(args.ListNamespaces)
 	case args.Login != nil:
 		return runLogin(args.Login)
+	case args.Json2Hcl != nil:
+		return runJson2Hcl(args.Json2Hcl)
+	default:
+		parser.WriteHelp(os.Stderr)
 	}
 
 	return nil
@@ -168,7 +196,7 @@ func nomadJobDo(namespace, job, output, action string) error {
 		return err
 	}
 
-	if isStdout(output) {
+	if isStdpipe(output) {
 		cmd := exec.Command("nomad", "job", action, "-")
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -208,13 +236,21 @@ func nomadJobDo(namespace, job, output, action string) error {
 }
 
 func openOutput(name string) (io.Writer, error) {
-	if isStdout(name) {
+	if isStdpipe(name) {
 		return os.Stdout, nil
 	} else {
 		return os.OpenFile(name, os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0644)
 	}
 }
 
-func isStdout(name string) bool {
+func openInput(name string) (io.Reader, error) {
+	if isStdpipe(name) {
+		return os.Stdin, nil
+	} else {
+		return os.Open(name)
+	}
+}
+
+func isStdpipe(name string) bool {
 	return name == "" || name == "-"
 }

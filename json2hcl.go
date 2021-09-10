@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/hashicorp/hcl/v2/gohcl"
@@ -9,6 +11,40 @@ import (
 	"github.com/hashicorp/nomad/api"
 	"github.com/zclconf/go-cty/cty"
 )
+
+type Json2HclCmd struct {
+	Output string `arg:"-o" help:"write output to this file (- for stdout)" placeholder:"FILE"`
+	Input  string `arg:"-i" help:"read JSON from this file (- for stdin)" placeholder:"FILE"`
+}
+
+func runJson2Hcl(args *Json2HclCmd) error {
+	read, err := openInput(args.Input)
+	if err != nil {
+		return err
+	}
+
+	input, err := io.ReadAll(read)
+	if err != nil {
+		return err
+	}
+
+	wrapper := &JobWrapper{}
+
+	err = json.Unmarshal(input, wrapper)
+	if err != nil {
+		return err
+	}
+
+	file := job2hcl(wrapper.Job)
+
+	write, err := openOutput(args.Output)
+	if err != nil {
+		return err
+	}
+
+	_, err = file.WriteTo(write)
+	return err
+}
 
 func job2hcl(job *api.Job) *hclwrite.File {
 	f := hclwrite.NewEmptyFile()

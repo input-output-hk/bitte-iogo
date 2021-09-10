@@ -29,8 +29,12 @@ func cueExport() (*CueExport, error) {
 	return export, err
 }
 
+type JobWrapper struct {
+	Job *api.Job
+}
+
 type CueExport struct {
-	Rendered map[string]map[string]struct{ Job *api.Job }
+	Rendered map[string]map[string]JobWrapper
 }
 
 func cue2hcl(namespace, job string) (*hclwrite.File, error) {
