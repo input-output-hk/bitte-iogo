@@ -748,6 +748,8 @@ func convertValue(value interface{}) (cv cty.Value, ok bool) {
 		if v != nil {
 			return cty.BoolVal(*v), true
 		}
+	case nil:
+		return cty.NilVal, true
 	case bool:
 		return cty.BoolVal(v), true
 	case time.Duration:
