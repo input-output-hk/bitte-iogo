@@ -53,7 +53,7 @@ type iogo struct {
 	Json2Hcl       *Json2HclCmd       `arg:"subcommand:json2hcl"`
 }
 
-const version = "iogo 1.0.0"
+const version = "iogo 2021.10.06.001"
 
 func (iogo) Version() string {
 	return version
