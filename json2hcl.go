@@ -291,7 +291,7 @@ func setConsulGatewayProxy(parent *hclwrite.Body, proxy *api.ConsulGatewayProxy)
 	setAttributeValue(body, "envoy_gateway_bind_addresses", proxy.EnvoyGatewayBindTaggedAddresses)
 	setAttributeValue(body, "envoy_gateway_no_default_bind", proxy.EnvoyGatewayNoDefaultBind)
 	setAttributeValue(body, "envoy_dns_discovery_type", proxy.EnvoyDNSDiscoveryType)
-	setAttributeValue(body, "config", proxy.Config)
+	setConfig(body, proxy.Config)
 }
 
 func setConsulSidecarService(parent *hclwrite.Body, service *api.ConsulSidecarService) {
@@ -316,7 +316,7 @@ func setConsulProxy(parent *hclwrite.Body, proxy *api.ConsulProxy) {
 	setAttributeValue(body, "local_service_port", proxy.LocalServicePort)
 	setConsulExposeConfig(body, proxy.ExposeConfig)
 	setConsulUpstreams(body, proxy.Upstreams)
-	setAttributeValue(body, "config", proxy.Config)
+	setConfig(body, proxy.Config)
 }
 
 func setConsulUpstreams(parent *hclwrite.Body, upstreams []*api.ConsulUpstream) {
@@ -584,7 +584,7 @@ func setSpreadTarget(parent *hclwrite.Body, sts []*api.SpreadTarget) {
 	}
 }
 
-func setTaskConfig(parent *hclwrite.Body, config map[string]interface{}) {
+func setConfig(parent *hclwrite.Body, config map[string]interface{}) {
 	if len(config) == 0 {
 		return
 	}
@@ -604,7 +604,7 @@ func setTasks(parent *hclwrite.Body, tasks []*api.Task) {
 		setAttributeValue(body, "driver", task.Driver)
 		setAttributeValue(body, "user", task.User)
 		setTaskLifecycle(body, task.Lifecycle)
-		setTaskConfig(body, task.Config)
+		setConfig(body, task.Config)
 		setConstraints(body, task.Constraints)
 		setAffinities(body, task.Affinities)
 		setAttributeValue(body, "env", task.Env)

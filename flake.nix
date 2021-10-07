@@ -18,7 +18,7 @@
       overlay = final: prev: {
         iogo = prev.buildGoModule {
           pname = "iogo";
-          version = "2021.10.06.001";
+          version = "2021.10.07.001";
           vendorSha256 = "sha256-XWbyybBYlQCWhSwDTrFtmL4xFS6bxHl7wwGf7f+9pjE=";
 
           src = inputs.inclusive.lib.inclusive ./. [
