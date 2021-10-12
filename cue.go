@@ -47,8 +47,7 @@ func cue2hcl(namespace, job string) (*hclwrite.File, error) {
 
 	if foundNamespace, ok := export.Rendered[namespace]; ok {
 		if foundJob, ok := foundNamespace[job]; ok {
-			hcl := job2hcl(foundJob.Job)
-			return hcl, nil
+			return any2hcl("job", foundJob.Job)
 		} else {
 			return nil, fmt.Errorf("Missing job %s in namespace %s", job, namespace)
 		}

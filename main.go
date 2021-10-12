@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
@@ -12,9 +11,12 @@ import (
 	"github.com/alexflint/go-arg"
 )
 
+var buildVersion = "dev"
+var buildCommit = "dirty"
+
 const cue = "cue"
 
-var logger = log.New(ioutil.Discard, "DEBUG: ", log.LstdFlags)
+var logger = log.New(os.Stderr, "DEBUG: ", log.LstdFlags)
 
 type PlanCmd struct {
 	Namespace string `arg:"--namespace,env:NOMAD_NAMESPACE,required"`
@@ -53,10 +55,12 @@ type iogo struct {
 	Json2Hcl       *Json2HclCmd       `arg:"subcommand:json2hcl"`
 }
 
-const version = "iogo 2021.10.07.001"
+func Version() string {
+	return fmt.Sprintf("%s (%s)", buildVersion, buildCommit)
+}
 
 func (iogo) Version() string {
-	return version
+	return fmt.Sprintf("iogo %s", Version())
 }
 
 func main() {
@@ -79,10 +83,10 @@ func fail(parser *arg.Parser, err error) {
 		parser.WriteHelp(os.Stderr)
 		os.Exit(0)
 	case arg.ErrVersion:
-		fmt.Fprintln(os.Stdout, version)
+		fmt.Fprintln(os.Stdout, Version())
 		os.Exit(0)
 	default:
-		fmt.Fprint(os.Stderr, err)
+		fmt.Fprint(os.Stderr, err, "\n")
 		os.Exit(1)
 	}
 }
@@ -165,7 +169,10 @@ func runRender(args *RenderCmd) error {
 
 	if namespace, ok := export.Rendered[args.Namespace]; ok {
 		if job, ok := namespace[args.Job]; ok {
-			hcl := job2hcl(job.Job)
+			hcl, err := any2hcl("job", job.Job)
+			if err != nil {
+				return err
+			}
 
 			out, err := openOutput(args.Output)
 			if err != nil {

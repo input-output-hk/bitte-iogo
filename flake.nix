@@ -4,7 +4,7 @@
   inputs = {
     devshell.url = "github:numtide/devshell";
     inclusive.url = "github:input-output-hk/nix-inclusive";
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-21.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     utils.url = "github:kreisys/flake-utils";
   };
 
@@ -16,19 +16,28 @@
       preOverlays = [ devshell.overlay ];
 
       overlay = final: prev: {
-        iogo = prev.buildGoModule {
+        iogo = prev.buildGoModule rec {
           pname = "iogo";
-          version = "2021.10.07.001";
-          vendorSha256 = "sha256-XWbyybBYlQCWhSwDTrFtmL4xFS6bxHl7wwGf7f+9pjE=";
+          version = "2021.10.12.001";
+          vendorSha256 = "sha256-g36jy/TBBvW7M1Wsdj5NxXQyotBsw2t6L2RnvBICCaU=";
 
           src = inputs.inclusive.lib.inclusive ./. [
             ./cue.go
+            ./fixtures
             ./go.mod
             ./go.sum
-            ./json2hcl.go
             ./job.hcl
-            ./main.go
+            ./json2hcl.go
+            ./json2hcl_test.go
             ./login.go
+            ./main.go
+          ];
+
+          ldflags = [
+            "-s"
+            "-w"
+            "-X main.buildVersion=${version}"
+            "-X main.buildCommit=${self.rev or "dirty"}"
           ];
 
           postInstall = ''
@@ -44,10 +53,10 @@
 
       hydraJobs = { iogo }@pkgs: pkgs;
 
-      devShell = { devshell, go, goimports, gopls, gocode }:
+      devShell = { devshell, go, goimports, gopls, gocode, gcc }:
         devshell.mkShell {
           name = "bitte-iogo-shell";
-          packages = [ go goimports gopls gocode ];
+          packages = [ go goimports gopls gocode gcc ];
         };
     };
 }
