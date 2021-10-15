@@ -373,6 +373,21 @@ func TestJob2Hcl(t *testing.T) {
 			}},
 		}},
 	})
+
+	compare(r, "fixtures/11.hcl", &api.Job{
+		Name: ptrStr("test"),
+		TaskGroups: []*api.TaskGroup{{
+			Name: ptrStr("test"),
+			Tasks: []*api.Task{{
+				Name: "test",
+				Templates: []*api.Template{{
+					SourcePath:   ptrStr("foo"),
+					DestPath:     ptrStr("bar"),
+					EmbeddedTmpl: ptrStr(`Something with "quotes" is fun`),
+				}},
+			}},
+		}},
+	})
 }
 
 func compare(r *require.Assertions, fixturePath string, job *api.Job) {

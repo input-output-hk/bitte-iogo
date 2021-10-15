@@ -362,6 +362,7 @@ func setCty(body *hclwrite.Body, key string, c cty.Value) {
 				{Type: hclsyntax.TokenCHeredoc, Bytes: []byte(`HEREDOC`), SpacesBefore: 0},
 			})
 		} else {
+			s = strings.ReplaceAll(s, `"`, `\"`)
 			body.SetAttributeRaw(key, hclwrite.Tokens{
 				{Type: hclsyntax.TokenOQuote, Bytes: []byte(`"`), SpacesBefore: 0},
 				{Type: hclsyntax.TokenStringLit, Bytes: []byte(s), SpacesBefore: 0},
