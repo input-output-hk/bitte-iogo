@@ -21,6 +21,8 @@
           version = "2021.12.10.001";
           vendorSha256 = "sha256-g36jy/TBBvW7M1Wsdj5NxXQyotBsw2t6L2RnvBICCaU=";
 
+          meta.description = "one CLI for bitte nomad jobs";
+
           src = inputs.inclusive.lib.inclusive ./. [
             ./cue.go
             ./fixtures
