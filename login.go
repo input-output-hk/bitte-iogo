@@ -47,6 +47,11 @@ func runLogin(args *LoginCmd) error {
 
 	if admin {
 		args.role = "admin"
+		if strings.EqualFold(os.Getenv("BITTE_PROVIDER"), "AWS") {
+			if err := loginAWS(args); err != nil {
+				return err
+			}
+		}
 	} else {
 		args.role = "developer"
 	}
@@ -67,9 +72,13 @@ func runLogin(args *LoginCmd) error {
 export VAULT_TOKEN="%s"
 export NOMAD_TOKEN="%s"
 export CONSUL_HTTP_TOKEN="%s"
+export AWS_ACCESS_KEY_ID="%s"
+export AWS_SECRET_ACCESS_KEY="%s"
 `), os.Getenv("VAULT_TOKEN"),
 		os.Getenv("NOMAD_TOKEN"),
-		os.Getenv("CONSUL_HTTP_TOKEN"))
+		os.Getenv("CONSUL_HTTP_TOKEN"),
+		os.Getenv("AWS_ACCESS_KEY_ID"),
+		os.Getenv("AWS_SECRET_ACCESS_KEY"))
 
 	return nil
 }
@@ -123,6 +132,55 @@ func loginVault(args *LoginCmd) error {
 
 	_, err = exec.Command("vault", "token", "lookup").CombinedOutput()
 	return err
+}
+
+func loginAWS(args *LoginCmd) error {
+	keyPath := filepath.Join(args.cacheDir, "aws.key")
+	secretPath := filepath.Join(args.cacheDir, "aws.secret")
+
+	key, err := os.ReadFile(keyPath)
+	if err == nil {
+		if err = os.Setenv("AWS_ACCESS_KEY_ID", string(key)); err != nil {
+			return err
+		}
+	}
+
+	secret, err := os.ReadFile(secretPath)
+	if err == nil {
+		if err = os.Setenv("AWS_SECRET_ACCESS_KEY", string(secret)); err != nil {
+			return err
+		}
+	}
+
+	_, err = exec.Command("aws", "iam", "get-user").CombinedOutput()
+	if err == nil {
+		return nil
+	}
+
+	logger.Println("Obtaining and caching AWS keys")
+
+	output, err := exec.Command("vault", "read", "aws/creds/admin", "-format=json").CombinedOutput()
+	if err != nil {
+		return err
+	}
+
+	Keys := &AWSKeys{}
+
+	json.Unmarshal(output, Keys)
+
+	go func() {
+		key := Keys.Data.Access_Key
+		os.Setenv("AWS_ACCESS_KEY_ID", string(key))
+		os.WriteFile(keyPath, []byte(key), 0600)
+	}()
+
+	go func() {
+		secret := Keys.Data.Secret_Key
+		os.Setenv("AWS_SECRET_ACCESS_KEY", string(secret))
+		os.WriteFile(secretPath, []byte(secret), 0600)
+	}()
+
+	return nil
 }
 
 func loginConsul(args *LoginCmd) error {
@@ -192,6 +250,15 @@ type VaultToken struct {
 
 type VaultTokenData struct {
 	Policies []string
+}
+
+type AWSKeys struct {
+	Data AWSKeysData
+}
+
+type AWSKeysData struct {
+	Access_Key string
+	Secret_Key string
 }
 
 func isAdmin() (bool, error) {
