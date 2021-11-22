@@ -48,6 +48,7 @@ func runLogin(args *LoginCmd) error {
 	if admin {
 		args.role = "admin"
 		if strings.EqualFold(os.Getenv("BITTE_PROVIDER"), "AWS") {
+			os.Unsetenv("AWS_PROFILE")
 			if err := loginAWS(args); err != nil {
 				return err
 			}
