@@ -217,7 +217,7 @@ func convert(parent *hclwrite.Body, key string, obj interface{}) error {
 
 				v, ok := convertValue(mapValue.Interface())
 				if !ok {
-					return fmt.Errorf("Couldn't convert value: %#v", mapValue.Interface())
+					return fmt.Errorf("Couldn't convert value of key %s: %#v", mapKey, mapValue)
 				}
 
 				setCty(body, mapKey, v)
@@ -377,9 +377,7 @@ func setCty(body *hclwrite.Body, key string, c cty.Value) {
 func convertValue(value interface{}) (cv cty.Value, ok bool) {
 	switch v := value.(type) {
 	case string:
-		if v != "" {
-			return cty.StringVal(v), true
-		}
+		return cty.StringVal(v), true
 	case *string:
 		if v != nil {
 			return cty.StringVal(*v), true
