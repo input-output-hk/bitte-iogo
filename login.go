@@ -27,6 +27,11 @@ func runLogin(args *LoginCmd) error {
 	if err != nil {
 		return err
 	}
+
+	if err = os.Setenv("GITHUB_TOKEN", ght); err != nil {
+		return err
+	}
+
 	args.githubToken = ght
 
 	dir := cacheDir(args.Cluster)
@@ -70,12 +75,14 @@ func runLogin(args *LoginCmd) error {
 #
 # eval "$(iogo login)"
 
+export GITHUB_TOKEN="%s"
 export VAULT_TOKEN="%s"
 export NOMAD_TOKEN="%s"
 export CONSUL_HTTP_TOKEN="%s"
 export AWS_ACCESS_KEY_ID="%s"
 export AWS_SECRET_ACCESS_KEY="%s"
-`), os.Getenv("VAULT_TOKEN"),
+`), os.Getenv("GITHUB_TOKEN"),
+		os.Getenv("VAULT_TOKEN"),
 		os.Getenv("NOMAD_TOKEN"),
 		os.Getenv("CONSUL_HTTP_TOKEN"),
 		os.Getenv("AWS_ACCESS_KEY_ID"),
