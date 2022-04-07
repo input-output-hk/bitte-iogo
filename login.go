@@ -1,14 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"os/user"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/jdxcode/netrc"
 )
@@ -22,26 +23,18 @@ type LoginCmd struct {
 
 const githubApi = "api.github.com"
 
-func runLogin(args *LoginCmd) error {
-	ght, err := githubToken()
-	if err != nil {
+func (l *LoginCmd) runLogin() error {
+	dir := cacheDir(l.Cluster)
+	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
 
-	if err = os.Setenv("GITHUB_TOKEN", ght); err != nil {
+	l.cacheDir = dir
+	if err := l.setGithubToken(); err != nil {
 		return err
 	}
 
-	args.githubToken = ght
-
-	dir := cacheDir(args.Cluster)
-	if err = os.MkdirAll(dir, 0755); err != nil {
-		return err
-	}
-
-	args.cacheDir = dir
-
-	if err := loginVault(args); err != nil {
+	if err := l.loginVault(); err != nil {
 		return err
 	}
 
@@ -50,25 +43,23 @@ func runLogin(args *LoginCmd) error {
 		return err
 	}
 
+	wg := &sync.WaitGroup{}
+
 	if admin {
-		args.role = "admin"
+		l.role = "admin"
 		if strings.EqualFold(os.Getenv("BITTE_PROVIDER"), "AWS") {
 			os.Unsetenv("AWS_PROFILE")
-			if err := loginAWS(args); err != nil {
-				return err
-			}
+			wg.Add(1)
+			go l.loginAWS(wg)
 		}
 	} else {
-		args.role = "developer"
+		l.role = "developer"
 	}
 
-	if err := loginNomad(args); err != nil {
-		return err
-	}
-
-	if err := loginConsul(args); err != nil {
-		return err
-	}
+	wg.Add(2)
+	go l.loginNomad(wg)
+	go l.loginConsul(wg)
+	wg.Wait()
 
 	fmt.Printf(strings.TrimSpace(`
 # Use this in your .envrc:
@@ -91,8 +82,33 @@ export AWS_SECRET_ACCESS_KEY="%s"
 	return nil
 }
 
-func loginVault(args *LoginCmd) error {
-	tokenPath := filepath.Join(args.cacheDir, "vault.token")
+func (l *LoginCmd) setGithubToken() error {
+	usr, err := user.Current()
+	if err != nil {
+		return err
+	}
+
+	if rc, err := netrc.Parse(filepath.Join(usr.HomeDir, ".netrc")); err != nil {
+		return err
+	} else if machine := rc.Machine(githubApi); machine != nil {
+		if password := machine.Get("password"); password != "" {
+			if err = os.Setenv("GITHUB_TOKEN", password); err != nil {
+				return err
+			}
+
+			l.githubToken = password
+
+			return nil
+		} else {
+			return fmt.Errorf("No password for %s found in ~/.netrc", githubApi)
+		}
+	}
+
+	return fmt.Errorf("No entry for %s found in ~/.netrc", githubApi)
+}
+
+func (l *LoginCmd) loginVault() error {
+	tokenPath := filepath.Join(l.cacheDir, "vault.token")
 	content, err := os.ReadFile(tokenPath)
 	if err == nil {
 		if err = os.Setenv("VAULT_TOKEN", string(content)); err != nil {
@@ -113,54 +129,57 @@ func loginVault(args *LoginCmd) error {
 		"-token-only",
 		"-method=github",
 		"-path=github-employees",
-		"token=-")
+		"token="+l.githubToken)
 
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
+	stdout := &bytes.Buffer{}
+	cmd.Stdout = stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		logger.Println(stdout.String())
 		return err
 	}
 
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
+	token := stdout.String()
+	if err := os.Setenv("VAULT_TOKEN", token); err != nil {
 		return err
 	}
 
-	go func() {
-		stdin.Write([]byte(args.githubToken))
-		stdin.Close()
-	}()
+	if err := os.WriteFile(tokenPath, []byte(token), 0600); err != nil {
+		return err
+	}
 
-	go func() {
-		token, _ := io.ReadAll(stdout)
-		os.Setenv("VAULT_TOKEN", string(token))
-		os.WriteFile(tokenPath, token, 0600)
-	}()
+	out, err := exec.Command("vault", "token", "lookup").CombinedOutput()
+	if err != nil {
+		logger.Println(string(out))
+		return err
+	}
 
-	cmd.Run()
-
-	_, err = exec.Command("vault", "token", "lookup").CombinedOutput()
-	return err
+	return nil
 }
 
-func loginAWS(args *LoginCmd) error {
-	keyPath := filepath.Join(args.cacheDir, "aws.key")
-	secretPath := filepath.Join(args.cacheDir, "aws.secret")
+func (l *LoginCmd) loginAWS(wg *sync.WaitGroup) {
+	defer wg.Done()
+	if err := l.loginAWSInner(); err != nil {
+		logger.Println("Failed logging into AWS:", err.Error())
+	}
+}
 
-	key, err := os.ReadFile(keyPath)
-	if err == nil {
-		if err = os.Setenv("AWS_ACCESS_KEY_ID", string(key)); err != nil {
-			return err
-		}
+func (l *LoginCmd) loginAWSInner() error {
+	keyPath := filepath.Join(l.cacheDir, "aws.key")
+	secretPath := filepath.Join(l.cacheDir, "aws.secret")
+
+	if key, err := os.ReadFile(keyPath); err != nil {
+	} else if err := os.Setenv("AWS_ACCESS_KEY_ID", string(key)); err != nil {
+		return err
 	}
 
-	secret, err := os.ReadFile(secretPath)
-	if err == nil {
-		if err = os.Setenv("AWS_SECRET_ACCESS_KEY", string(secret)); err != nil {
-			return err
-		}
+	if secret, err := os.ReadFile(secretPath); err != nil {
+	} else if err := os.Setenv("AWS_SECRET_ACCESS_KEY", string(secret)); err != nil {
+		return err
 	}
 
-	_, err = exec.Command("aws", "iam", "get-user").CombinedOutput()
+	_, err := exec.Command("aws", "iam", "get-user").CombinedOutput()
 	if err == nil {
 		return nil
 	}
@@ -169,30 +188,44 @@ func loginAWS(args *LoginCmd) error {
 
 	output, err := exec.Command("vault", "read", "aws/creds/admin", "-format=json").CombinedOutput()
 	if err != nil {
+		logger.Println("failed `vault read aws/creds/admin -format=json`:", string(output))
 		return err
 	}
 
 	Keys := &AWSKeys{}
 
-	json.Unmarshal(output, Keys)
+	if err := json.Unmarshal(output, Keys); err != nil {
+		return err
+	}
 
-	go func() {
-		key := Keys.Data.Access_Key
-		os.Setenv("AWS_ACCESS_KEY_ID", string(key))
-		os.WriteFile(keyPath, []byte(key), 0600)
-	}()
+	key := Keys.Data.Access_Key
+	if err := os.Setenv("AWS_ACCESS_KEY_ID", string(key)); err != nil {
+		return err
+	}
+	if err := os.WriteFile(keyPath, []byte(key), 0600); err != nil {
+		return err
+	}
 
-	go func() {
-		secret := Keys.Data.Secret_Key
-		os.Setenv("AWS_SECRET_ACCESS_KEY", string(secret))
-		os.WriteFile(secretPath, []byte(secret), 0600)
-	}()
+	secret := Keys.Data.Secret_Key
+	if err := os.Setenv("AWS_SECRET_ACCESS_KEY", string(secret)); err != nil {
+		return err
+	}
+	if err := os.WriteFile(secretPath, []byte(secret), 0600); err != nil {
+		return err
+	}
 
 	return nil
 }
 
-func loginConsul(args *LoginCmd) error {
-	tokenPath := filepath.Join(args.cacheDir, "consul.token")
+func (l *LoginCmd) loginConsul(wg *sync.WaitGroup) {
+	defer wg.Done()
+	if err := l.loginConsulInner(); err != nil {
+		logger.Println("Failed logging into Consul:", err.Error())
+	}
+}
+
+func (l *LoginCmd) loginConsulInner() error {
+	tokenPath := filepath.Join(l.cacheDir, "consul.token")
 	cachedContent, err := os.ReadFile(tokenPath)
 	if err == nil {
 		if err = os.Setenv("CONSUL_HTTP_TOKEN", string(cachedContent)); err != nil {
@@ -207,18 +240,28 @@ func loginConsul(args *LoginCmd) error {
 
 	logger.Println("Obtaining and caching Consul token in " + tokenPath)
 
-	output, err := exec.Command("vault", "read", "-field", "token", "consul/creds/"+args.role).CombinedOutput()
+	output, err := exec.Command("vault", "read", "-field", "token", "consul/creds/"+l.role).CombinedOutput()
 	if err != nil {
 		return err
 	}
 
-	os.WriteFile(tokenPath, output, 0600)
+	if err := os.WriteFile(tokenPath, output, 0600); err != nil {
+		return err
+	}
 
 	return os.Setenv("CONSUL_HTTP_TOKEN", string(output))
 }
 
-func loginNomad(args *LoginCmd) error {
-	tokenPath := filepath.Join(args.cacheDir, "nomad.token")
+func (l *LoginCmd) loginNomad(wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	if err := l.loginNomadInner(); err != nil {
+		logger.Println("Failed logging into Nomad:", err.Error())
+	}
+}
+
+func (l *LoginCmd) loginNomadInner() error {
+	tokenPath := filepath.Join(l.cacheDir, "nomad.token")
 	cachedContent, err := os.ReadFile(tokenPath)
 	if err == nil {
 		if err = os.Setenv("NOMAD_TOKEN", string(cachedContent)); err != nil {
@@ -233,14 +276,21 @@ func loginNomad(args *LoginCmd) error {
 
 	logger.Println("Obtaining and caching Nomad token")
 
-	output, err := exec.Command("vault", "read", "-field", "secret_id", "nomad/creds/"+args.role).CombinedOutput()
+	output, err := exec.Command("vault", "read", "-field", "secret_id", "nomad/creds/"+l.role).CombinedOutput()
 	if err != nil {
+		logger.Println(string(output))
 		return err
 	}
 
-	os.WriteFile(tokenPath, output, 0600)
+	if err := os.WriteFile(tokenPath, output, 0600); err != nil {
+		return err
+	}
 
-	return os.Setenv("NOMAD_TOKEN", string(output))
+	if err := os.Setenv("NOMAD_TOKEN", string(output)); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func cacheDir(cluster string) string {
@@ -276,7 +326,9 @@ func isAdmin() (bool, error) {
 	}
 
 	vaultToken := &VaultToken{}
-	json.Unmarshal(output, vaultToken)
+	if err := json.Unmarshal(output, vaultToken); err != nil {
+		return false, err
+	}
 
 	for _, policy := range vaultToken.Data.Policies {
 		if policy == "admin" {
@@ -285,23 +337,4 @@ func isAdmin() (bool, error) {
 	}
 
 	return false, nil
-}
-
-func githubToken() (string, error) {
-	usr, err := user.Current()
-	if err != nil {
-		return "", err
-	}
-
-	rc, err := netrc.Parse(filepath.Join(usr.HomeDir, ".netrc"))
-
-	if machine := rc.Machine(githubApi); machine != nil {
-		if password := machine.Get("password"); password != "" {
-			return password, nil
-		} else {
-			return "", fmt.Errorf("No password for %s found in ~/.netrc", githubApi)
-		}
-	}
-
-	return "", fmt.Errorf("No entry for %s found in ~/.netrc", githubApi)
 }

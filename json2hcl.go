@@ -194,12 +194,16 @@ func convert(parent *hclwrite.Body, key string, obj interface{}) error {
 		case map[string]*api.VolumeRequest:
 			for mapKey, mapValue := range t {
 				body := parent.AppendNewBlock(key, []string{mapKey}).Body()
-				convert(body, "", *mapValue)
+				if err := convert(body, "", *mapValue); err != nil {
+					return err
+				}
 			}
 		case map[string]*api.ConsulGatewayBindAddress:
 			for mapKey, mapValue := range t {
 				body := parent.AppendNewBlock(key, []string{mapKey}).Body()
-				convert(body, "", *mapValue)
+				if err := convert(body, "", *mapValue); err != nil {
+					return err
+				}
 			}
 		case map[string]string, map[string]interface{}:
 			body := parent.AppendNewBlock(key, []string{}).Body()

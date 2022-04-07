@@ -113,7 +113,7 @@ func run(parser *arg.Parser, args *iogo) error {
 	case args.ListNamespaces != nil:
 		return runListNamespaces(args.ListNamespaces)
 	case args.Login != nil:
-		return runLogin(args.Login)
+		return args.Login.runLogin()
 	case args.Json2Hcl != nil:
 		return runJson2Hcl(args.Json2Hcl)
 	default:

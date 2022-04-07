@@ -53,10 +53,10 @@
 
       hydraJobs = { iogo }@pkgs: pkgs;
 
-      devShell = { devshell, go, goimports, gopls, gocode, gcc }:
+      devShell = { devshell, go, gotools, gopls, gocode, gcc,alejandra }:
         devshell.mkShell {
           name = "bitte-iogo-shell";
-          packages = [ go goimports gopls gocode gcc ];
+          packages = [ go gotools gopls gocode gcc alejandra ];
         };
     };
 }
