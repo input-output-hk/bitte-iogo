@@ -296,7 +296,7 @@ func (l *LoginCmd) loginNomadInner() error {
 func cacheDir(cluster string) string {
 	root := os.Getenv("XDG_CACHE_HOME")
 	if root == "" {
-		root = ".direnv"
+		root = filepath.Join(os.Getenv("HOME"), ".cache")
 	}
 
 	return filepath.Join(root, "bitte", cluster, "tokens")
