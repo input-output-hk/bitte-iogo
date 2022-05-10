@@ -49,6 +49,9 @@ func (l *LoginCmd) runLogin() error {
 		l.role = "admin"
 		if strings.EqualFold(os.Getenv("BITTE_PROVIDER"), "AWS") {
 			os.Unsetenv("AWS_PROFILE")
+			if err = os.Setenv("AWS_SHARED_CREDENTIALS_FILE", "/dev/null"); err != nil {
+				return err
+			}
 			wg.Add(1)
 			go l.loginAWS(wg)
 		}
