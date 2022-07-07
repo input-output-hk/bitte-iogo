@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/jdxcode/netrc"
 )
@@ -22,6 +24,16 @@ type LoginCmd struct {
 }
 
 const githubApi = "api.github.com"
+
+func isNotExpired(tokenPath string) bool {
+	fileStat, err := os.Stat(tokenPath)
+
+	if err != nil {
+		return false
+	}
+
+	return fileStat.ModTime().After(time.Now().AddDate(0, -1, 0))
+}
 
 func (l *LoginCmd) runLogin() error {
 	dir := cacheDir(l.Cluster)
@@ -38,7 +50,7 @@ func (l *LoginCmd) runLogin() error {
 		return err
 	}
 
-	admin, err := isAdmin()
+	admin, err := l.isAdmin()
 	if err != nil {
 		return err
 	}
@@ -119,8 +131,7 @@ func (l *LoginCmd) loginVault() error {
 		}
 	}
 
-	_, err = exec.Command("vault", "token", "lookup").CombinedOutput()
-	if err == nil {
+	if isNotExpired(tokenPath) {
 		return nil
 	}
 
@@ -182,8 +193,7 @@ func (l *LoginCmd) loginAWSInner() error {
 		return err
 	}
 
-	_, err := exec.Command("aws", "iam", "get-user").CombinedOutput()
-	if err == nil {
+	if isNotExpired(keyPath) && isNotExpired(secretPath) {
 		return nil
 	}
 
@@ -236,8 +246,7 @@ func (l *LoginCmd) loginConsulInner() error {
 		}
 	}
 
-	_, err = exec.Command("consul", "acl", "token", "read", "-self").CombinedOutput()
-	if err == nil {
+	if isNotExpired(tokenPath) {
 		return nil
 	}
 
@@ -272,8 +281,7 @@ func (l *LoginCmd) loginNomadInner() error {
 		}
 	}
 
-	_, err = exec.Command("nomad", "acl", "token", "self").CombinedOutput()
-	if err == nil {
+	if isNotExpired(tokenPath) {
 		return nil
 	}
 
@@ -322,7 +330,20 @@ type AWSKeysData struct {
 	Secret_Key string
 }
 
-func isAdmin() (bool, error) {
+func (l *LoginCmd) isAdmin() (bool, error) {
+	tokenPath := filepath.Join(l.cacheDir, "vault.token")
+	policyPath := filepath.Join(l.cacheDir, "vault.policy")
+
+	if isNotExpired(tokenPath) {
+		content, err := os.ReadFile(policyPath)
+		if string(content) == "admin" {
+			return true, err
+		}
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return false, err
+		}
+	}
+
 	output, err := exec.Command("vault", "token", "lookup", "-format", "json").CombinedOutput()
 	if err != nil {
 		return false, err
@@ -335,9 +356,11 @@ func isAdmin() (bool, error) {
 
 	for _, policy := range vaultToken.Data.Policies {
 		if policy == "admin" {
-			return true, nil
+			err := os.WriteFile(policyPath, []byte(policy), 0600)
+			return true, err
 		}
 	}
 
-	return false, nil
+	err = os.WriteFile(policyPath, []byte("developer"), 0600)
+	return false, err
 }
