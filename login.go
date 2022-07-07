@@ -21,13 +21,13 @@ type LoginCmd struct {
 	cacheDir    string
 	githubToken string
 	role        string
-	IgnoreCache bool `arg:"--ignore-cache, -i" help:"regenerate tokens from scratch"`
+	Force       bool `arg:"--force, -f" help:"grab fresh tokens, ignoring the cache"`
 }
 
 const githubApi = "api.github.com"
 
 func (l *LoginCmd) isNotExpired(tokenPath string) bool {
-	if l.IgnoreCache {
+	if l.Force {
 		return false
 	}
 
@@ -64,16 +64,17 @@ func (l *LoginCmd) runLogin() error {
 
 	if admin {
 		l.role = "admin"
-		if strings.EqualFold(os.Getenv("BITTE_PROVIDER"), "AWS") {
-			os.Unsetenv("AWS_PROFILE")
-			if err = os.Setenv("AWS_SHARED_CREDENTIALS_FILE", "/dev/null"); err != nil {
-				return err
-			}
-			wg.Add(1)
-			go l.loginAWS(wg)
-		}
 	} else {
 		l.role = "developer"
+	}
+
+	if strings.EqualFold(os.Getenv("BITTE_PROVIDER"), "AWS") {
+		os.Unsetenv("AWS_PROFILE")
+		if err = os.Setenv("AWS_SHARED_CREDENTIALS_FILE", "/dev/null"); err != nil {
+			return err
+		}
+		wg.Add(1)
+		go l.loginAWS(wg)
 	}
 
 	wg.Add(2)
@@ -204,9 +205,11 @@ func (l *LoginCmd) loginAWSInner() error {
 
 	logger.Println("Obtaining and caching AWS keys")
 
-	output, err := exec.Command("vault", "read", "aws/creds/admin", "-format=json").CombinedOutput()
+	credsPath := fmt.Sprintf("aws/creds/%s", l.role)
+
+	output, err := exec.Command("vault", "read", credsPath, "-format=json").CombinedOutput()
 	if err != nil {
-		logger.Println("failed `vault read aws/creds/admin -format=json`:", string(output))
+		logger.Println("failed `vault read ", credsPath, " -format=json`:", string(output))
 		return err
 	}
 
