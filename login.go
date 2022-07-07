@@ -21,11 +21,16 @@ type LoginCmd struct {
 	cacheDir    string
 	githubToken string
 	role        string
+	IgnoreCache bool `arg:"--ignore-cache, -i" help:"regenerate tokens from scratch"`
 }
 
 const githubApi = "api.github.com"
 
-func isNotExpired(tokenPath string) bool {
+func (l *LoginCmd) isNotExpired(tokenPath string) bool {
+	if l.IgnoreCache {
+		return false
+	}
+
 	fileStat, err := os.Stat(tokenPath)
 
 	if err != nil {
@@ -131,7 +136,7 @@ func (l *LoginCmd) loginVault() error {
 		}
 	}
 
-	if isNotExpired(tokenPath) {
+	if l.isNotExpired(tokenPath) {
 		return nil
 	}
 
@@ -193,7 +198,7 @@ func (l *LoginCmd) loginAWSInner() error {
 		return err
 	}
 
-	if isNotExpired(keyPath) && isNotExpired(secretPath) {
+	if l.isNotExpired(keyPath) && l.isNotExpired(secretPath) {
 		return nil
 	}
 
@@ -246,7 +251,7 @@ func (l *LoginCmd) loginConsulInner() error {
 		}
 	}
 
-	if isNotExpired(tokenPath) {
+	if l.isNotExpired(tokenPath) {
 		return nil
 	}
 
@@ -281,7 +286,7 @@ func (l *LoginCmd) loginNomadInner() error {
 		}
 	}
 
-	if isNotExpired(tokenPath) {
+	if l.isNotExpired(tokenPath) {
 		return nil
 	}
 
@@ -334,7 +339,7 @@ func (l *LoginCmd) isAdmin() (bool, error) {
 	tokenPath := filepath.Join(l.cacheDir, "vault.token")
 	policyPath := filepath.Join(l.cacheDir, "vault.policy")
 
-	if isNotExpired(tokenPath) {
+	if l.isNotExpired(tokenPath) {
 		content, err := os.ReadFile(policyPath)
 		if string(content) == "admin" {
 			return true, err
