@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/jdxcode/netrc"
 )
@@ -19,9 +21,24 @@ type LoginCmd struct {
 	cacheDir    string
 	githubToken string
 	role        string
+	Force       bool `arg:"--force, -f" help:"grab fresh tokens, ignoring the cache"`
 }
 
 const githubApi = "api.github.com"
+
+func (l *LoginCmd) isNotExpired(tokenPath string) bool {
+	if l.Force {
+		return false
+	}
+
+	fileStat, err := os.Stat(tokenPath)
+
+	if err != nil {
+		return false
+	}
+
+	return fileStat.ModTime().After(time.Now().AddDate(0, -1, 0))
+}
 
 func (l *LoginCmd) runLogin() error {
 	dir := cacheDir(l.Cluster)
@@ -38,7 +55,7 @@ func (l *LoginCmd) runLogin() error {
 		return err
 	}
 
-	admin, err := isAdmin()
+	admin, err := l.isAdmin()
 	if err != nil {
 		return err
 	}
@@ -47,16 +64,17 @@ func (l *LoginCmd) runLogin() error {
 
 	if admin {
 		l.role = "admin"
-		if strings.EqualFold(os.Getenv("BITTE_PROVIDER"), "AWS") {
-			os.Unsetenv("AWS_PROFILE")
-			if err = os.Setenv("AWS_SHARED_CREDENTIALS_FILE", "/dev/null"); err != nil {
-				return err
-			}
-			wg.Add(1)
-			go l.loginAWS(wg)
-		}
 	} else {
 		l.role = "developer"
+	}
+
+	if strings.EqualFold(os.Getenv("BITTE_PROVIDER"), "AWS") {
+		os.Unsetenv("AWS_PROFILE")
+		if err = os.Setenv("AWS_SHARED_CREDENTIALS_FILE", "/dev/null"); err != nil {
+			return err
+		}
+		wg.Add(1)
+		go l.loginAWS(wg)
 	}
 
 	wg.Add(2)
@@ -119,8 +137,7 @@ func (l *LoginCmd) loginVault() error {
 		}
 	}
 
-	_, err = exec.Command("vault", "token", "lookup").CombinedOutput()
-	if err == nil {
+	if l.isNotExpired(tokenPath) {
 		return nil
 	}
 
@@ -182,16 +199,17 @@ func (l *LoginCmd) loginAWSInner() error {
 		return err
 	}
 
-	_, err := exec.Command("aws", "iam", "get-user").CombinedOutput()
-	if err == nil {
+	if l.isNotExpired(keyPath) && l.isNotExpired(secretPath) {
 		return nil
 	}
 
 	logger.Println("Obtaining and caching AWS keys")
 
-	output, err := exec.Command("vault", "read", "aws/creds/admin", "-format=json").CombinedOutput()
+	credsPath := fmt.Sprintf("aws/creds/%s", l.role)
+
+	output, err := exec.Command("vault", "read", credsPath, "-format=json").CombinedOutput()
 	if err != nil {
-		logger.Println("failed `vault read aws/creds/admin -format=json`:", string(output))
+		logger.Println("failed `vault read ", credsPath, " -format=json`:", string(output))
 		return err
 	}
 
@@ -236,8 +254,7 @@ func (l *LoginCmd) loginConsulInner() error {
 		}
 	}
 
-	_, err = exec.Command("consul", "acl", "token", "read", "-self").CombinedOutput()
-	if err == nil {
+	if l.isNotExpired(tokenPath) {
 		return nil
 	}
 
@@ -272,8 +289,7 @@ func (l *LoginCmd) loginNomadInner() error {
 		}
 	}
 
-	_, err = exec.Command("nomad", "acl", "token", "self").CombinedOutput()
-	if err == nil {
+	if l.isNotExpired(tokenPath) {
 		return nil
 	}
 
@@ -322,7 +338,20 @@ type AWSKeysData struct {
 	Secret_Key string
 }
 
-func isAdmin() (bool, error) {
+func (l *LoginCmd) isAdmin() (bool, error) {
+	tokenPath := filepath.Join(l.cacheDir, "vault.token")
+	policyPath := filepath.Join(l.cacheDir, "vault.policy")
+
+	if l.isNotExpired(tokenPath) {
+		content, err := os.ReadFile(policyPath)
+		if string(content) == "admin" {
+			return true, err
+		}
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return false, err
+		}
+	}
+
 	output, err := exec.Command("vault", "token", "lookup", "-format", "json").CombinedOutput()
 	if err != nil {
 		return false, err
@@ -335,9 +364,11 @@ func isAdmin() (bool, error) {
 
 	for _, policy := range vaultToken.Data.Policies {
 		if policy == "admin" {
-			return true, nil
+			err := os.WriteFile(policyPath, []byte(policy), 0600)
+			return true, err
 		}
 	}
 
-	return false, nil
+	err = os.WriteFile(policyPath, []byte("developer"), 0600)
+	return false, err
 }
